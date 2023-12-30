@@ -1,11 +1,15 @@
 use anyhow::Result;
 use bacon_sci::interp::lagrange;
+use bacon_sci::polynomial::Polynomial;
 use clap::Parser;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::IoSliceMut;
-use std::path::PathBuf;
+use std::io::{IoSliceMut,Cursor};
+use std::path::{PathBuf,Path};
 use std::ffi::{OsStr,OsString};
+use std::mem::size_of;
+use byteorder::{LittleEndian,ReadBytesExt,WriteBytesExt};
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -54,8 +58,7 @@ fn simple_cbf(input: &mut File, output: &mut File,ext:&OsStr) -> Result<()> {
         num
     };
     //write string and size
-    let str_size:[u8;1]= [ext.len().try_into()?];
-    output.write(&str_size)?;
+    output.write_u64::<LittleEndian>(ext.len() as u64)?;
     let bytes = ext.as_encoded_bytes();
     output.write(&bytes)?;
     //refactor later
@@ -63,9 +66,9 @@ fn simple_cbf(input: &mut File, output: &mut File,ext:&OsStr) -> Result<()> {
     let xs: Vec<f64> = (0..keys.len()).map(|x| x as f64).collect();
     let coeffs = lagrange(&xs, &keys, 1e-6).unwrap().get_coefficients();
     println!("values of {:?} can be modeled with a polynomial with coefficients {:?}",keys,coeffs);
-    output.write(&chunksize.to_le_bytes())?;
+    output.write_u64::<LittleEndian>(chunksize as u64)?;
     for coeff in coeffs {
-        output.write(&coeff.to_le_bytes())?;
+        output.write_f64::<LittleEndian>(coeff)?;
     }
     Ok(())
 }
@@ -82,7 +85,7 @@ fn open_files(args:Args) -> Result<(File,File)>{
     Ok((input,output))
 }
 
-fn get_extension(s:&PathBuf) -> OsString{
+fn get_extension(s:&Path) -> OsString{
     match s.extension(){
         Some(ext) => ext.to_os_string(),
         None => OsString::new(),
@@ -95,6 +98,36 @@ fn compress(args:Args) -> Result<()>{
     let (mut input,mut output) = open_files(args)?;
     simple_cbf(&mut input,&mut output,&ext)
 }
+
+
+/// EXTENSION SIZE u8 | EXTENSION | CHUNK SIZE (in bytes) | POLYNOMIALS
+fn simple_decompress(input: &mut File,output: Option<&mut File>) -> Result<()>{
+    let mut input_bytes:Vec<u8> = Vec::new();
+    let e_size:u8 = 0;
+    input.read(&mut[e_size])?;
+    let mut extension:Vec<u8> = vec![0;e_size as usize];
+    input.read_exact(&mut extension)?;
+    let mut chunksize = [0_u8;size_of::<usize>()];
+    input.read_exact(&mut chunksize)?;
+    let chunksize = usize::from_le_bytes(chunksize);
+    let mut polys:Vec<f64> = Vec::new(); 
+    input.read_to_end(&mut input_bytes)? ;
+    let mut buf = [0_u8;8];
+    while input.read(&mut buf).is_ok_and(|x| x != 0) {
+        polys.push(f64::from_le_bytes(buf));
+    }
+    println!("decompressed to {:?}",polys);
+    Ok(())
+}
+
+
+
+
+fn decompress(args:Args) -> Result<()>{
+    let (mut input,mut output) = open_files(args)?;
+    Ok(())
+}
+
 
 fn main() {
     let args = Args::parse();

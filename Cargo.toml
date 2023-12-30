@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.77"
 bacon-sci = "0.14.0"
+byteorder = "1.5.0"
 clap = { version = "4.4.12", features = ["derive"] }
 serde = "1.0.193"
