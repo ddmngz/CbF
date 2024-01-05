@@ -34,9 +34,7 @@ fn encode(args:Args,funct:&mut impl CompressionFn) -> Result<()>{
 fn decode(args:Args, funct:&mut impl CompressionFn)-> Result<()>{
     let mut input = File::open(args.input).expect("directory doesn't exist");
     let mut output = File::create(args.output.unwrap()).expect("directory doesn'te xist");
-    println!("decoding");
     funct.decode(&mut input, &mut output)?;
-    println!("done");
     Ok(())
 }
 
@@ -47,7 +45,7 @@ fn main(){
     std::io::stdin().read_line(&mut response).expect("goofy");
     let mut simple:SimpleCbF = SimpleCbF::new();
     match &response[..]{
-        "c\n" => encode(args,&mut simple).expect("error"),
+        "e\n" => encode(args,&mut simple).expect("error"),
         "d\n" => decode(args,&mut simple).expect("decompression error"),
         _ => println!("invalid character"),
     }

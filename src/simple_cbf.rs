@@ -16,8 +16,8 @@ use std::mem::size_of;
 /// EXTENSION SIZE u8 | EXTENSION | CHUNK SIZE (in bytes) | NUMBER OF CHUNKS | POLYNOMIAL DEGREES
 
 pub struct SimpleCbF {
-    chunksize: u64,
-    no_chunks: u64,
+    chunksize: usize,
+    no_chunks: usize,
     extension: Option<String>,
 }
 
@@ -31,16 +31,15 @@ impl SimpleCbF {
     }
     fn encode_metadata(&mut self, input: &File, ext: &str) -> Result<()> {
         let filesize = input.metadata()?.len();
-        // TODO: HOW TO DETERMINE CHUNK SIZE?
-        let chunksize = 1;
+        // optimize greater chunksize because less chunks = simpler polynomial
+        let chunksize = (filesize as f64/size_of::<u32>() as f64).ceil() as usize;
         // round up?
-        let chunks = filesize / chunksize;
+        let chunks = (filesize / chunksize as u64) as usize;
         self.chunksize = chunksize;
         self.no_chunks = chunks;
         self.extension = Some(ext.to_owned());
         Ok(())
     }
-    // find a way to write without taking ownership
     fn write_metadata(&mut self, output: &mut File) -> Result<()> {
         if let Some(ext) = &self.extension {
             let extension_size: u8 = ext.len().try_into()?;
@@ -54,15 +53,21 @@ impl SimpleCbF {
         }
     }
     fn encode_contents(&self, input: &mut File, output: &mut File) -> Result<()> {
-        // helper closure :3
+        // anonymous function to interpret the bits as a number
         let bytestonum = |x: &Vec<u8>| {
-            let mut num: f64 = 0.0;
-            for (i, n) in x.iter().enumerate() {
-                println!("{}", i);
-                num += (*n as u64 * 256_u64.pow(i as u32)) as f64;
+            println!("interpreting the following as one little endian number");
+            for i in x{
+                println!("{:b}",*i);
             }
-            println!("num: {num}");
-            num
+            if x.len() > 4{
+                panic!("encoded wrong (chunk too big");
+            }
+            let mut bytes = [0;4];
+            bytes[..x.len()].copy_from_slice(&x[..x.len()]);
+            let val = u32::from_le_bytes(bytes);
+            println!("got {val}");
+            println!("as a float is {}", val as f64);
+            val as f64
         };
         // read in chunks
         let mut buffers = vec![vec![0u8; self.chunksize as usize]; self.no_chunks as usize];
@@ -73,8 +78,11 @@ impl SimpleCbF {
         input.read_vectored(&mut io_slice_buf[..])?;
         // create lagrange polynomial
         let keys: Vec<f64> = buffers.iter().map(bytestonum).collect::<Vec<f64>>();
+        println!("chunksize {}",self.chunksize);
+        println!("values: {:?}",keys);
         let xs: Vec<f64> = (0..keys.len()).map(|x| x as f64).collect();
-        let coeffs = lagrange(&xs, &keys, 1e-6).unwrap().get_coefficients();
+        let coeffs = lagrange(&xs, &keys, 1e-20).unwrap().get_coefficients();
+        println!("coeffs: {:?}",coeffs);
         let bytes: Vec<u8> = coeffs
             .iter()
             .flat_map(|x| (*x).to_le_bytes().to_vec())
@@ -91,8 +99,8 @@ impl SimpleCbF {
         let extension = String::from_utf8(extension)?;
         //println!("extension is {}",extension);
         self.extension = Some(extension);
-        self.chunksize = input.read_u64::<LittleEndian>()?;
-        self.no_chunks = input.read_u64::<LittleEndian>()?;
+        self.chunksize = input.read_u64::<LittleEndian>()?.try_into()?;
+        self.no_chunks = input.read_u64::<LittleEndian>()?.try_into()?;
         Ok(())
     }
     fn decode_contents(&mut self, input: &mut File, output: &mut File) -> Result<()> {
@@ -102,14 +110,13 @@ impl SimpleCbF {
         while input.read(&mut buf).is_ok_and(|x| x > 0) {
             polys.push(f64::from_le_bytes(buf));
         }
+        println!("coefficients: {:?}",polys);
         let func = Polynomial::from_slice(&polys);
         let mut new_file: Vec<u8> = Vec::new();
-        // this currently doesn't work for larger chunksizes
-        println!("{}",self.no_chunks);
         for i in 0..self.no_chunks {
-            let scalar = func.evaluate(i as f64).round() as u8;
+            let scalar = func.evaluate(i as f64).round() as u32;
             println!("f({i}) = {scalar}");
-            new_file.push(scalar);
+            new_file.extend(scalar.to_le_bytes());
         }
         output.write_all(&new_file)?;
         Ok(())
