@@ -12,10 +12,10 @@ This project is in such small scope, is currently in the proof of concept stage,
 
 ## Todo
 ## Lagrange CBF
-- [ ] Refactor to make next steps easier
-- [ ] Placeholder for determining chunk size for SimpleCbf
+- [x] Refactor to make next steps easier
+- [x] Placeholder for determining chunk size for SimpleCbf
+- [x] Determine Optimal Chunk size & implement it
 - [ ] Create algorithm for produce the simplest lagrange interpolation (optimize for compression first (lower degee polynomial), then performance)
-- [ ] Determine Optimal Chunk size & implement it
 - [ ] Make Lagrange CBF lossless by reimplementing it
 
 ## Arbitrary Function CBF
